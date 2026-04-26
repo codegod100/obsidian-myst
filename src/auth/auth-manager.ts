@@ -29,6 +29,7 @@ export class AtpAuthManager implements IAtpAuthManager {
 	async initialize(): Promise<void> {
 		this.plugin.registerObsidianProtocolHandler(this.protocolScheme, (params) => {
 			try {
+				console.log("[myst-oauth] protocol handler fired, raw params:", params);
 				const urlParams = new URLSearchParams();
 				for (const [key, value] of Object.entries(params)) {
 					if (value) urlParams.set(key, String(value));

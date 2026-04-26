@@ -49,6 +49,7 @@ export class OAuthHandler {
 	}
 
 	handleCallback(params: URLSearchParams): void {
+		console.log("[myst-oauth] handleCallback called, resolver:", !!this.callbackResolver, "params:", Object.fromEntries(params.entries()));
 		if (this.callbackResolver && this.callbackRejecter) {
 			if (this.callbackTimeout) {
 				clearTimeout(this.callbackTimeout);
@@ -66,6 +67,8 @@ export class OAuthHandler {
 			this.callbackResolver = null;
 			this.callbackRejecter = null;
 			this.pendingState = null;
+		} else {
+			console.warn("[myst-oauth] handleCallback called but no resolver set — callback arrived before authorize() was ready, or duplicate callback");
 		}
 	}
 
@@ -107,8 +110,16 @@ export class OAuthHandler {
 
 		const params = await waitForCallback;
 		new Notice("Authorization callback received. Exchanging tokens...");
-		const { session } = await finalizeAuthorization(params);
-		return session;
+		console.log("[myst-oauth] finalizeAuthorization params:", Object.fromEntries(params.entries()));
+		try {
+			const { session } = await finalizeAuthorization(params);
+			console.log("[myst-oauth] finalizeAuthorization success, sub:", session.info.sub);
+			return session;
+		} catch (err) {
+			console.error("[myst-oauth] finalizeAuthorization failed:", err);
+			new Notice("Token exchange failed: " + (err instanceof Error ? err.message : String(err)));
+			throw err;
+		}
 	}
 
 	async restore(did: string): Promise<Session> {
