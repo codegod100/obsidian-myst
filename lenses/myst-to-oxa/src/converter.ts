@@ -21,12 +21,14 @@ import type {
   MystUnorderedList,
   MystDirective,
   MystRole,
+  MystLink,
   OxaDocument,
   OxaBlock,
   OxaInline,
   OxaText,
   OxaBlockBase,
   OxaListItem,
+  OxaLink,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -55,6 +57,15 @@ function convertInline(node: MystInline): OxaInline | undefined {
 
     case "role":
       return convertRole(node);
+
+    case "link": {
+      const link = node as MystLink;
+      const result: OxaLink = { type: "Link", target: link.target };
+      if (link.children && link.children.length > 0) {
+        result.children = convertInlines(link.children);
+      }
+      return result;
+    }
 
     default:
       return undefined;
@@ -211,9 +222,24 @@ function convertDirective(directive: MystDirective): OxaBlock | undefined {
     if (directive.options.alt) {
       result.alt = directive.options.alt;
     }
-    // Body becomes caption (stored as data for now)
+    // Body becomes caption; options preserved in data for round-trip
+    const data: Record<string, unknown> = {};
     if (directive.body) {
-      result.data = { caption: directive.body, ...directive.options };
+      data.caption = directive.body;
+    }
+    // Store all options (except alt which has its own field) in data.options
+    const opts = Object.entries(directive.options).filter(([k]) => k !== "alt");
+    if (opts.length > 0) {
+      data.options = Object.fromEntries(opts);
+    }
+    // Also keep flat option keys in data for backward compat with existing records
+    for (const [key, value] of Object.entries(directive.options)) {
+      if (key !== "alt") {
+        data[key] = value;
+      }
+    }
+    if (Object.keys(data).length > 0) {
+      result.data = data;
     }
     return result;
   }
@@ -228,8 +254,13 @@ function convertDirective(directive: MystDirective): OxaBlock | undefined {
     if (directive.argument) {
       result.title = directive.argument;
     }
+    // Preserve directive options in data for round-trip
+    const opts = Object.entries(directive.options);
+    if (opts.length > 0) {
+      result.data = { ...result.data, options: directive.options };
+    }
     // Use nested children if available, otherwise parse body as paragraph
-    const children = (directive as any).children;
+    const children = directive.children;
     if (children && children.length > 0) {
       result.children = convertBlocks(children);
     } else if (directive.body) {
@@ -252,29 +283,53 @@ function convertDirective(directive: MystDirective): OxaBlock | undefined {
       if (directive.argument) {
         result.language = directive.argument;
       }
+      // Preserve directive options in data for round-trip
+      const opts = Object.entries(directive.options);
+      if (opts.length > 0) {
+        result.data = { options: directive.options };
+      }
       return result;
     }
     case "math": {
-      return {
+      const result: OxaBlock = {
         type: "Math",
         value: directive.body,
       };
+      // Preserve directive options in data for round-trip
+      const opts = Object.entries(directive.options);
+      if (opts.length > 0) {
+        result.data = { options: directive.options };
+      }
+      return result;
     }
     default: {
       // Unknown directives with children — convert as generic container
-      const children = (directive as any).children;
+      const children = directive.children;
       if (children && children.length > 0) {
-        return {
+        const result: OxaBlock = {
           ...copyBlockBase(directive),
           type: "Admonition",
           kind: directive.name,
           title: directive.argument || undefined,
           children: convertBlocks(children),
         };
+        // Preserve directive options and body in data for round-trip
+        const data: Record<string, unknown> = {};
+        const opts = Object.entries(directive.options);
+        if (opts.length > 0) {
+          data.options = directive.options;
+        }
+        if (directive.body) {
+          data.body = directive.body;
+        }
+        if (Object.keys(data).length > 0) {
+          result.data = data;
+        }
+        return result;
       }
       // Unknown directives with body only — convert as admonition with body paragraph
       if (directive.body) {
-        return {
+        const result: OxaBlock = {
           ...copyBlockBase(directive),
           type: "Admonition",
           kind: directive.name,
@@ -284,6 +339,15 @@ function convertDirective(directive: MystDirective): OxaBlock | undefined {
             children: [{ type: "Text", value: directive.body } as OxaText],
           }],
         };
+        // Preserve directive options and body in data for round-trip
+        const data: Record<string, unknown> = {};
+        const opts = Object.entries(directive.options);
+        if (opts.length > 0) {
+          data.options = directive.options;
+        }
+        data.body = directive.body;
+        result.data = data;
+        return result;
       }
       return undefined;
     }
@@ -348,6 +412,10 @@ export function convertMystToOxa(doc: MystDocument): OxaDocument {
 
   if (doc.title !== undefined) {
     result.title = [{ type: "Text", value: doc.title } as OxaText];
+  }
+
+  if (doc.metadata !== undefined) {
+    result.metadata = doc.metadata;
   }
 
   return result;

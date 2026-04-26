@@ -70,6 +70,7 @@ export interface MystDirective {
   argument: string;
   options: Record<string, string>;
   body: string;
+  children?: MystBlock[];
 }
 
 export interface MystRole {
@@ -78,7 +79,7 @@ export interface MystRole {
   content: string;
 }
 
-export type MystInline = MystText | MystStrong | MystEmphasis | MystInlineCode | MystRole;
+export type MystInline = MystText | MystStrong | MystEmphasis | MystInlineCode | MystRole | MystLink;
 
 export interface MystStrong {
   type: "strong";
@@ -93,6 +94,12 @@ export interface MystEmphasis {
 export interface MystInlineCode {
   type: "inline_code";
   value: string;
+}
+
+export interface MystLink {
+  type: "link";
+  target: string;
+  children?: MystInline[];
 }
 
 export type MystBlock =
@@ -111,6 +118,7 @@ export interface MystDocument {
   type: "document";
   children: MystBlock[];
   title?: string;
+  metadata?: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +146,12 @@ export interface OxaInlineCode {
   language?: string;
 }
 
+export interface OxaLink {
+  type: "Link";
+  target: string;
+  children?: OxaInline[];
+}
+
 export interface OxaSuperscript {
   type: "Superscript";
   children: OxaInline[];
@@ -153,6 +167,7 @@ export type OxaInline =
   | OxaStrong
   | OxaEmphasis
   | OxaInlineCode
+  | OxaLink
   | OxaSuperscript
   | OxaSubscript;
 

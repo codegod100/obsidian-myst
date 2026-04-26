@@ -403,7 +403,7 @@ describe("convertMystToOxa", () => {
           type: "Image",
           src: "photo.png",
           alt: "A photo",
-          data: { caption: "Caption text.", alt: "A photo", width: "50%" },
+          data: { caption: "Caption text.", width: "50%", options: { width: "50%" } },
         },
       ],
     });

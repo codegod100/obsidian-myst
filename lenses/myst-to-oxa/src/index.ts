@@ -1,4 +1,5 @@
 export { convertMystToOxa } from "./converter.js";
+export { convertOxaToMyst } from "./inverse.js";
 export type {
   MystDocument,
   MystBlock,

@@ -30,7 +30,24 @@ import type {
 	MystStrong,
 	MystEmphasis,
 	MystInlineCode,
+	MystLink,
 } from "../../lenses/myst-to-oxa/src/types";
+
+// ---------------------------------------------------------------------------
+// Directive classification
+// ---------------------------------------------------------------------------
+
+/**
+ * Directives whose body is raw literal content, not parsed markdown.
+ * For these, `tok.content` is the body and should NOT be parsed into blocks.
+ */
+const RAW_BODY_DIRECTIVES = new Set([
+	"code-block",
+	"code-cell",
+	"math",
+	"list-table",
+	"csv-table",
+]);
 
 // ---------------------------------------------------------------------------
 // Colon-fence rule for markdown-it
@@ -315,6 +332,20 @@ function walkInlines(tokens: any[], start: number, end: number): MystInline[] {
 			continue;
 		}
 
+		// link_open / link_close
+		if (tok.type === "link_open") {
+			const href = tok.attrGet("href") ?? "";
+			const closeIdx = findMatchingClose(tokens, i, "link_close");
+			const children = walkInlines(tokens, i + 1, closeIdx);
+			const link: MystLink = { type: "link", target: href };
+			if (children.length > 0) {
+				link.children = children;
+			}
+			inlines.push(link);
+			i = closeIdx + 1;
+			continue;
+		}
+
 		// Skip unknown inline tokens
 		i++;
 	}
@@ -411,14 +442,33 @@ function walkBlocks(tokens: any[]): MystBlock[] {
 			continue;
 		}
 
-		// fence (code block)
+		// fence (code block or backtick-fenced directive)
 		if (tok.type === "fence") {
+			const info = tok.info?.trim() ?? "";
+
+			// Backtick-fenced directive: ```{name} arg
+			const directiveMatch = info.match(/^\{(\w[\w-]*)\}\s*(.*)$/);
+			if (directiveMatch) {
+				const dirName = directiveMatch[1];
+				const dirArg = directiveMatch[2].trim();
+				const dir: MystDirective = {
+					type: "directive",
+					name: dirName,
+					argument: dirArg,
+					options: {},
+					body: tok.content ?? "",
+				};
+				blocks.push(dir);
+				i++;
+				continue;
+			}
+
+			// Regular code block
 			const block: MystCodeBlock = {
 				type: "code_block",
 				value: tok.content,
 			};
-			const lang = tok.info?.trim();
-			if (lang) block.language = lang;
+			if (info) block.language = info;
 			blocks.push(block);
 			i++;
 			continue;
@@ -492,22 +542,10 @@ function walkBlocks(tokens: any[]): MystBlock[] {
 			const arg = tok.meta?.arg ?? "";
 			const options = tok.meta?.options ?? {};
 			const closeIdx = findMatchingClose(tokens, i, "parsed_directive_close");
-
-			// Walk the body tokens between open and close to find nested directives/blocks
-			const bodyBlocks = walkDirectiveBody(tokens, i + 1, closeIdx);
-
-			// If there are nested blocks, use them as children; otherwise use raw body string
 			const body = tok.content ?? "";
-			if (bodyBlocks.length > 0) {
-				blocks.push({
-					type: "directive",
-					name,
-					argument: arg,
-					options,
-					body,
-					children: bodyBlocks,
-				} as MystDirective & { children: MystBlock[] });
-			} else {
+
+			// Raw-body directives: body is literal content, not parsed markdown
+			if (RAW_BODY_DIRECTIVES.has(name)) {
 				blocks.push({
 					type: "directive",
 					name,
@@ -515,6 +553,27 @@ function walkBlocks(tokens: any[]): MystBlock[] {
 					options,
 					body,
 				} as MystDirective);
+			} else {
+				// Parsed-body directives: walk body tokens for nested blocks
+				const bodyBlocks = walkDirectiveBody(tokens, i + 1, closeIdx);
+				if (bodyBlocks.length > 0) {
+					blocks.push({
+						type: "directive",
+						name,
+						argument: arg,
+						options,
+						body,
+						children: bodyBlocks,
+					} as MystDirective & { children: MystBlock[] });
+				} else {
+					blocks.push({
+						type: "directive",
+						name,
+						argument: arg,
+						options,
+						body,
+					} as MystDirective);
+				}
 			}
 
 			i = closeIdx + 1;
@@ -575,19 +634,10 @@ function walkDirectiveBody(tokens: any[], startIdx: number, endIdx: number): Mys
 			const arg = tok.meta?.arg ?? "";
 			const options = tok.meta?.options ?? {};
 			const closeIdx = findMatchingClose(tokens, i, "parsed_directive_close");
-			const bodyBlocks = walkDirectiveBody(tokens, i + 1, closeIdx);
 			const body = tok.content ?? "";
 
-			if (bodyBlocks.length > 0) {
-				blocks.push({
-					type: "directive",
-					name,
-					argument: arg,
-					options,
-					body,
-					children: bodyBlocks,
-				} as MystDirective & { children: MystBlock[] });
-			} else {
+			// Raw-body directives: body is literal content
+			if (RAW_BODY_DIRECTIVES.has(name)) {
 				blocks.push({
 					type: "directive",
 					name,
@@ -595,6 +645,26 @@ function walkDirectiveBody(tokens: any[], startIdx: number, endIdx: number): Mys
 					options,
 					body,
 				} as MystDirective);
+			} else {
+				const bodyBlocks = walkDirectiveBody(tokens, i + 1, closeIdx);
+				if (bodyBlocks.length > 0) {
+					blocks.push({
+						type: "directive",
+						name,
+						argument: arg,
+						options,
+						body,
+						children: bodyBlocks,
+					} as MystDirective & { children: MystBlock[] });
+				} else {
+					blocks.push({
+						type: "directive",
+						name,
+						argument: arg,
+						options,
+						body,
+					} as MystDirective);
+				}
 			}
 
 			i = closeIdx + 1;
@@ -635,6 +705,113 @@ function collectListItems(tokens: any[], startIdx: number, endIdx: number): Myst
 }
 
 // ---------------------------------------------------------------------------
+// YAML frontmatter extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract YAML frontmatter from the start of a markdown document.
+ *
+ * MyST frontmatter is a simple `---`-delimited YAML block at the top.
+ * We parse a limited subset: string values, arrays of strings, and
+ * nested objects one level deep. This covers the common MyST fields
+ * (title, subtitle, authors, license, etc.) without requiring a YAML dep.
+ *
+ * @returns `{ markdown, frontmatter }` — the markdown with frontmatter
+ *   stripped, and the parsed key-value map.
+ */
+function extractFrontmatter(markdown: string): { markdown: string; frontmatter: Record<string, unknown> } {
+	// Must start with --- on its own line
+	if (!markdown.startsWith("---\n") && !markdown.startsWith("---\r\n")) {
+		return { markdown, frontmatter: {} };
+	}
+
+	// Find closing ---
+	const afterFirst = markdown.indexOf("\n") + 1;
+	const closeIdx = markdown.indexOf("\n---", afterFirst);
+	if (closeIdx === -1) {
+		return { markdown, frontmatter: {} };
+	}
+
+	const yamlText = markdown.slice(afterFirst, closeIdx);
+	const restOfMarkdown = markdown.slice(closeIdx + 4).replace(/^\r?\n/, "");
+
+	const frontmatter = parseSimpleYaml(yamlText);
+	return { markdown: restOfMarkdown, frontmatter };
+}
+
+/**
+ * Parse a limited YAML subset: top-level string/number values,
+ * arrays of strings, and one-level-deep objects.
+ */
+function parseSimpleYaml(yamlText: string): Record<string, unknown> {
+	const result: Record<string, unknown> = {};
+	const lines = yamlText.split(/\r?\n/);
+	let i = 0;
+
+	while (i < lines.length) {
+		const line = lines[i];
+
+		// Skip blank lines and comments
+		if (!line.trim() || line.trimStart().startsWith("#")) {
+			i++;
+			continue;
+		}
+
+		// Key: value
+		const kvMatch = line.match(/^(\w[\w-]*):\s*(.*)$/);
+		if (!kvMatch) {
+			i++;
+			continue;
+		}
+
+		const key = kvMatch[1];
+		const value = kvMatch[2].trim();
+
+		if (value === "" || value === "|" || value === ">") {
+			// Multiline or block — look for indented lines or array items
+			i++;
+			const nested: string[] = [];
+			const nestedObj: Record<string, string> = {};
+
+			while (i < lines.length) {
+				const nextLine = lines[i];
+				// List item: "  - value"
+				const listMatch = nextLine.match(/^\s+-\s+(.+)$/);
+				if (listMatch) {
+					nested.push(listMatch[1].trim());
+					i++;
+					continue;
+				}
+				// Nested key: "  key: value"
+				const nestedKvMatch = nextLine.match(/^\s+(\w[\w-]*):\s*(.*)$/);
+				if (nestedKvMatch) {
+					nestedObj[nestedKvMatch[1]] = nestedKvMatch[2].trim();
+					i++;
+					continue;
+				}
+				// No longer indented — done with this block
+				if (nextLine.trim() && !nextLine.startsWith(" ")) break;
+				i++;
+			}
+
+			if (nested.length > 0) {
+				result[key] = nested;
+			} else if (Object.keys(nestedObj).length > 0) {
+				result[key] = nestedObj;
+			} else {
+				result[key] = "";
+			}
+		} else {
+			// Inline value — strip quotes
+			result[key] = value.replace(/^["']|["']$/g, "");
+			i++;
+		}
+	}
+
+	return result;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -645,27 +822,47 @@ function collectListItems(tokens: any[], startIdx: number, endIdx: number): Myst
  * @returns MystDocument with children as MystBlock nodes.
  */
 export function parseMyst(markdown: string): MystDocument {
-	const tokens = md.parse(markdown, {});
+	// Extract YAML frontmatter before parsing
+	const { markdown: mdSource, frontmatter } = extractFrontmatter(markdown);
+
+	const tokens = md.parse(mdSource, {});
 	const children = walkBlocks(tokens);
 
-	// Extract title from first heading if present
+	// Extract title: prefer frontmatter title, then first h1
 	let title: string | undefined;
-	for (const block of children) {
-		if (block.type === "heading" && (block as MystHeading).level === 1) {
-			title = (block as MystHeading).children
-				.map((c) => {
-					if (c.type === "text") return (c as MystText).value;
-					if (c.type === "inline_code") return (c as MystInlineCode).value;
-					return "";
-				})
-				.join("");
-			break;
+	if (typeof frontmatter.title === "string") {
+		title = frontmatter.title;
+	} else {
+		for (const block of children) {
+			if (block.type === "heading" && (block as MystHeading).level === 1) {
+				title = (block as MystHeading).children
+					.map((c) => {
+						if (c.type === "text") return (c as MystText).value;
+						if (c.type === "inline_code") return (c as MystInlineCode).value;
+						return "";
+					})
+					.join("");
+				break;
+			}
 		}
 	}
 
-	return {
+	const result: MystDocument = {
 		type: "document",
 		children,
 		title,
 	};
+
+	// Preserve frontmatter as metadata (excluding title which has its own field)
+	const metadata: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(frontmatter)) {
+		if (key !== "title") {
+			metadata[key] = value;
+		}
+	}
+	if (Object.keys(metadata).length > 0) {
+		result.metadata = metadata;
+	}
+
+	return result;
 }
