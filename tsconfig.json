@@ -9,11 +9,11 @@
 		"noImplicitAny": true,
 		"noImplicitOverride": true,
 		"noImplicitThis": true,
-		"moduleResolution": "node",
-		"importHelpers": true,
+		"moduleResolution": "bundler",
+		"importHelpers": false,
 		"isolatedModules": true,
 		"strictNullChecks": true,
-		"lib": ["DOM", "ES2022"],
+		"lib": ["DOM", "ES2022", "ES2024.Promise"],
 		"paths": {
 			"src/*": ["src/*"]
 		}

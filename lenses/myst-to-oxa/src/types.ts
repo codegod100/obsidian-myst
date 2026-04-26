@@ -1,0 +1,193 @@
+/**
+ * MyST and OXA type definitions for the myst-to-oxa converter.
+ */
+
+// ---------------------------------------------------------------------------
+// MyST types (source)
+// ---------------------------------------------------------------------------
+
+export interface MystText {
+  type: "text";
+  value: string;
+}
+
+export interface MystHeading {
+  type: "heading";
+  level: number;
+  children: MystInline[];
+}
+
+export interface MystParagraph {
+  type: "paragraph";
+  children: MystInline[];
+}
+
+export interface MystCodeBlock {
+  type: "code_block";
+  value: string;
+  language?: string;
+}
+
+export interface MystThematicBreak {
+  type: "thematic_break";
+}
+
+export interface MystBlockquote {
+  type: "blockquote";
+  children: MystBlock[];
+}
+
+export interface MystImage {
+  type: "image";
+  src: string;
+  alt?: string;
+}
+
+export interface MystMathBlock {
+  type: "math_block";
+  value: string;
+}
+
+export interface MystOrderedList {
+  type: "ordered_list";
+  children: MystListItem[];
+  startIndex?: number;
+}
+
+export interface MystUnorderedList {
+  type: "unordered_list";
+  children: MystListItem[];
+}
+
+export interface MystListItem {
+  type: "list_item";
+  children: MystBlock[];
+}
+
+export interface MystDirective {
+  type: "directive";
+  name: string;
+  argument: string;
+  options: Record<string, string>;
+  body: string;
+}
+
+export interface MystRole {
+  type: "role";
+  name: string;
+  content: string;
+}
+
+export type MystInline = MystText | MystStrong | MystEmphasis | MystInlineCode | MystRole;
+
+export interface MystStrong {
+  type: "strong";
+  children: MystInline[];
+}
+
+export interface MystEmphasis {
+  type: "emphasis";
+  children: MystInline[];
+}
+
+export interface MystInlineCode {
+  type: "inline_code";
+  value: string;
+}
+
+export type MystBlock =
+  | MystHeading
+  | MystParagraph
+  | MystCodeBlock
+  | MystThematicBreak
+  | MystBlockquote
+  | MystImage
+  | MystMathBlock
+  | MystOrderedList
+  | MystUnorderedList
+  | MystDirective;
+
+export interface MystDocument {
+  type: "document";
+  children: MystBlock[];
+  title?: string;
+}
+
+// ---------------------------------------------------------------------------
+// OXA tree-model types (target)
+// ---------------------------------------------------------------------------
+
+export interface OxaText {
+  type: "Text";
+  value: string;
+}
+
+export interface OxaStrong {
+  type: "Strong";
+  children: OxaInline[];
+}
+
+export interface OxaEmphasis {
+  type: "Emphasis";
+  children: OxaInline[];
+}
+
+export interface OxaInlineCode {
+  type: "InlineCode";
+  value: string;
+  language?: string;
+}
+
+export interface OxaSuperscript {
+  type: "Superscript";
+  children: OxaInline[];
+}
+
+export interface OxaSubscript {
+  type: "Subscript";
+  children: OxaInline[];
+}
+
+export type OxaInline =
+  | OxaText
+  | OxaStrong
+  | OxaEmphasis
+  | OxaInlineCode
+  | OxaSuperscript
+  | OxaSubscript;
+
+export interface OxaBlockBase {
+  id?: string;
+  classes?: string[];
+  data?: Record<string, unknown>;
+}
+
+export interface OxaParagraph extends OxaBlockBase {
+  type: "Paragraph";
+  children: OxaInline[];
+}
+
+export interface OxaHeading extends OxaBlockBase {
+  type: "Heading";
+  level: number;
+  children: OxaInline[];
+}
+
+export interface OxaCode extends OxaBlockBase {
+  type: "Code";
+  value: string;
+  language?: string;
+}
+
+export interface OxaThematicBreak extends OxaBlockBase {
+  type: "ThematicBreak";
+}
+
+export type OxaBlock = OxaParagraph | OxaHeading | OxaCode | OxaThematicBreak;
+
+export interface OxaDocument {
+  type: "Document";
+  children: OxaBlock[];
+  title?: OxaInline[];
+  metadata?: Record<string, unknown>;
+}

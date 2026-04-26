@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type MystPlugin from "src/main";
 
 export interface PluginSettings {
@@ -30,6 +30,54 @@ export class MystSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+
+		// ATProto auth section
+		containerEl.createEl("h2", { text: "ATProto" });
+
+		if (this.plugin.authManager.isLoggedIn) {
+			const handle = this.plugin.authManager.handle ?? "";
+			const did = this.plugin.authManager.did ?? "";
+			new Setting(containerEl)
+				.setName("Logged in")
+				.setDesc(`@${handle} (${did})`)
+				.addButton((btn) =>
+					btn.setButtonText("Logout").onClick(async () => {
+						await this.plugin.authManager.logout();
+						new Notice("Logged out");
+						this.display();
+					}),
+				);
+		} else {
+			let identifier = "";
+			new Setting(containerEl)
+				.setName("ATProto login")
+				.setDesc("Enter your handle or DID to authenticate")
+				.addText((text) =>
+					text
+						.setPlaceholder("e.g. alice.bsky.social")
+						.onChange((value) => {
+							identifier = value;
+						}),
+				)
+				.addButton((btn) =>
+					btn.setButtonText("Login").onClick(async () => {
+						if (!identifier) {
+							new Notice("Enter a handle or DID");
+							return;
+						}
+						try {
+							await this.plugin.authManager.login(identifier);
+							this.display();
+						} catch (err) {
+							const msg = err instanceof Error ? err.message : String(err);
+							new Notice(`Login failed: ${msg}`);
+						}
+					}),
+				);
+		}
+
+		// MyST settings section
+		containerEl.createEl("h2", { text: "MyST" });
 
 		new Setting(containerEl)
 			.setName("Directives")
