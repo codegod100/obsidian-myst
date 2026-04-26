@@ -116,9 +116,6 @@
 	display: inline-flex;
 	align-items: baseline;
 	gap: 0.15em;
-	padding: 0.1em 0.3em;
-	border-radius: 3px;
-	background: var(--background-secondary-alt);
 	font-size: 0.9em;
 }
 

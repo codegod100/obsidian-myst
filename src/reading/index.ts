@@ -1,6 +1,6 @@
 import type MystPlugin from "src/main";
-import { directiveCodeBlockProcessor } from "src/reading/directive-renderer";
-import { rolePostProcessor } from "src/reading/role-renderer";
+import { directivePostProcessor } from "src/reading/directive-renderer";
+import { rolePostProcessor, setRoleRendererApp } from "src/reading/role-renderer";
 import { dollarMathPostProcessor } from "src/reading/math-renderer";
 import { calloutBridgePostProcessor } from "src/reading/callout-bridge";
 
@@ -9,70 +9,23 @@ import { calloutBridgePostProcessor } from "src/reading/callout-bridge";
  *
  * Obsidian's reading mode uses remark/unified, not markdown-it.
  * We can't inject markdown-it-myst directly. Instead:
- * - Directives: registerMarkdownCodeBlockProcessor for ````md```{name}` syntax
- * - Roles: registerMarkdownPostProcessor scans for {name}`content` patterns
- * - Dollar math: registerMarkdownPostProcessor for $...$ and $$...$$
- * - Callout bridge: registerMarkdownPostProcessor to add MyST semantics to callouts
+ * - Directives: post-processor that finds code blocks with MyST directive language classes
+ * - Roles: post-processor scans for {name}`content` patterns
+ * - Dollar math: post-processor for $...$ and $$...$$
+ * - Callout bridge: post-processor to add MyST semantics to callouts
+ *
+ * NOTE: We cannot use registerMarkdownCodeBlockProcessor with `{name}` language
+ * strings because the braces produce invalid CSS selectors (e.g. `code.language-{note}`),
+ * which causes Obsidian's internal querySelectorAll to throw.
  */
 export function registerReadingMode(plugin: MystPlugin): void {
 	const { settings } = plugin;
 
-	if (settings.enableDirectives) {
-		// Register directive code block processor for ```{directive-name} syntax
-		plugin.registerMarkdownCodeBlockProcessor(
-			"myst-directive",
-			directiveCodeBlockProcessor,
-		);
+	// Provide app reference for MarkdownRenderer.render (math roles)
+	setRoleRendererApp(plugin.app);
 
-		// Also catch ```{name} where name is a known directive
-		plugin.registerMarkdownCodeBlockProcessor(
-			"{admonition}",
-			directiveCodeBlockProcessor,
-		);
-		plugin.registerMarkdownCodeBlockProcessor(
-			"{note}",
-			directiveCodeBlockProcessor,
-		);
-		plugin.registerMarkdownCodeBlockProcessor(
-			"{warning}",
-			directiveCodeBlockProcessor,
-		);
-		plugin.registerMarkdownCodeBlockProcessor(
-			"{tip}",
-			directiveCodeBlockProcessor,
-		);
-		plugin.registerMarkdownCodeBlockProcessor(
-			"{danger}",
-			directiveCodeBlockProcessor,
-		);
-		plugin.registerMarkdownCodeBlockProcessor(
-			"{figure}",
-			directiveCodeBlockProcessor,
-		);
-		plugin.registerMarkdownCodeBlockProcessor(
-			"{code-block}",
-			directiveCodeBlockProcessor,
-		);
-		plugin.registerMarkdownCodeBlockProcessor(
-			"{math}",
-			directiveCodeBlockProcessor,
-		);
-		plugin.registerMarkdownCodeBlockProcessor(
-			"{dropdown}",
-			directiveCodeBlockProcessor,
-		);
-		plugin.registerMarkdownCodeBlockProcessor(
-			"{tab-set}",
-			directiveCodeBlockProcessor,
-		);
-		plugin.registerMarkdownCodeBlockProcessor(
-			"{tab-item}",
-			directiveCodeBlockProcessor,
-		);
-		plugin.registerMarkdownCodeBlockProcessor(
-			"{mermaid}",
-			directiveCodeBlockProcessor,
-		);
+	if (settings.enableDirectives) {
+		plugin.registerMarkdownPostProcessor(directivePostProcessor);
 	}
 
 	if (settings.enableRoles) {

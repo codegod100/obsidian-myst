@@ -1,0 +1,11 @@
+[book]
+title = "MyST Markdown for Obsidian"
+authors = ["nandi"]
+language = "en"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "navy"
+git-repository-url = "https://github.com/codegod100/obsidian-myst"

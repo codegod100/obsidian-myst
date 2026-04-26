@@ -1,77 +1,112 @@
-import type { MarkdownPostProcessor } from "obsidian";
+import { Component, MarkdownRenderer, type App, type MarkdownPostProcessor, type MarkdownPostProcessorContext } from "obsidian";
+import { KNOWN_ROLES } from "src/shared/myst-types";
+import type MystPlugin from "src/main";
 
 /**
  * Post-processor for MyST inline roles.
  *
- * Scans rendered HTML for raw role syntax: {name}`content`
- * and replaces it with styled spans.
+ * Obsidian's remark parser splits the role syntax:
+ *   {math}`content`
+ * into two separate DOM elements:
+ *   - A text node containing "{math}"
+ *   - A <code> element containing "content"
  *
- * Note: Obsidian's remark parser may mangle the backtick content.
- * If the role syntax survives the remark parse intact, we render it.
- * If not, this processor will be a no-op for those cases.
+ * So we look for text nodes that end with `{name}` and check if the
+ * next sibling is a <code> element. If so, we combine them into a
+ * rendered role span.
+ *
+ * For math roles (math, m), the content is rendered using
+ * MarkdownRenderer.render() which invokes Obsidian's built-in
+ * MathJax pipeline.
  */
-export const rolePostProcessor: MarkdownPostProcessor = (el: HTMLElement) => {
-	// Role pattern: {name}`content` or {name}`content <target>`
-	// The remark parser may or may not preserve these in the output.
-	// We search text nodes for the raw pattern.
-	const rolePattern = /\{([a-zA-Z][a-zA-Z0-9_:.-]*)\}`([^`]+)`/g;
+let pluginApp: App | null = null;
 
-	walkTextNodes(el, (textNode) => {
-		const text = textNode.text;
-		if (!text.includes("{") || !text.includes("`")) return;
-
-		const result = text.replace(rolePattern, (_match, name: string, content: string) => {
-			// Return a placeholder that we'll replace with a real element
-			return `\x00ROLE:${name}:${content}\x00`;
-		});
-
-		if (result === text) return;
-
-		// Split on placeholders and build a fragment
-		const fragment = document.createDocumentFragment();
-		const parts = result.split(/(\x00ROLE:([^:]+):([^\x00]+)\x00)/g);
-
-		for (let i = 0; i < parts.length; i++) {
-			if (i % 4 === 0) {
-				// Plain text
-				if (parts[i]) fragment.appendChild(document.createTextNode(parts[i]));
-			} else if (i % 4 === 1) {
-				// Skip the full match (we use the captured groups)
-			} else if (i % 4 === 2) {
-				// Role name
-				const roleName = parts[i];
-				const roleContent = parts[i + 1];
-				const span = document.createElement("span");
-				span.addClass("myst-role");
-				span.addClass(`myst-role-${roleName}`);
-				const label = span.createSpan({ cls: "myst-role-label" });
-				label.textContent = `:${roleName}:`;
-				const body = span.createSpan({ cls: "myst-role-content" });
-				body.textContent = roleContent;
-				fragment.appendChild(span);
-				i++; // Skip the content part (already consumed)
-			}
-		}
-
-		textNode.node?.parentNode?.replaceChild(fragment, textNode.node);
-	});
-};
-
-interface TextNodeInfo {
-	node: Text;
-	text: string;
+export function setRoleRendererApp(app: App): void {
+	pluginApp = app;
 }
 
-function walkTextNodes(root: HTMLElement, callback: (info: TextNodeInfo) => void): void {
-	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-	const nodes: Text[] = [];
+export const rolePostProcessor: MarkdownPostProcessor = (el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
+	// Pattern for a text node ending with {role-name}
+	const roleTextPattern = /\{([a-zA-Z][a-zA-Z0-9_:.-]*)\}$/;
+
+	// Walk all text nodes looking for role name patterns
+	const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+	const textNodes: Text[] = [];
 
 	let current: Text | null;
 	while ((current = walker.nextNode() as Text | null)) {
-		nodes.push(current);
+		textNodes.push(current);
 	}
 
-	for (const node of nodes) {
-		callback({ node, text: node.textContent ?? "" });
+	for (const textNode of textNodes) {
+		const text = textNode.textContent ?? "";
+		const match = text.match(roleTextPattern);
+		if (!match) continue;
+
+		const roleName = match[1];
+		if (!KNOWN_ROLES.has(roleName)) continue;
+
+		// Check if the next sibling is a <code> element
+		const codeEl = textNode.nextElementSibling;
+		if (!codeEl || codeEl.tagName !== "CODE") continue;
+
+		// Get the content from the <code> element (excluding Obsidian's copy icon)
+		const codeContent = getCodeTextContent(codeEl);
+		if (!codeContent) continue;
+
+		// Build the rendered role span
+		const span = document.createElement("span");
+		span.addClass("myst-role");
+		span.addClass(`myst-role-${roleName}`);
+
+		// Math roles: render via MarkdownRenderer (uses Obsidian's MathJax)
+		// No label — the rendered math is the output
+		if (roleName === "math" || roleName === "m") {
+			const mathContainer = span.createSpan({ cls: "myst-role-math" });
+			if (pluginApp) {
+				// Render $content$ as markdown — Obsidian will invoke MathJax
+				MarkdownRenderer.render(
+					pluginApp,
+					`$${codeContent}$`,
+					mathContainer,
+					ctx.sourcePath,
+					new Component(),
+				);
+			} else {
+				// Fallback: plain text
+				mathContainer.textContent = codeContent;
+			}
+		} else {
+			const label = span.createSpan({ cls: "myst-role-label" });
+			label.textContent = `:${roleName}:`;
+			const body = span.createSpan({ cls: "myst-role-content" });
+			body.textContent = codeContent;
+		}
+
+		// Replace the <code> element with the role span
+		codeEl.replaceWith(span);
+
+		// Remove the {name} from the text node
+		const textBefore = text.slice(0, match.index);
+		if (textBefore) {
+			textNode.textContent = textBefore;
+		} else {
+			textNode.remove();
+		}
 	}
+};
+
+/**
+ * Extract text content from a <code> element, excluding
+ * Obsidian's injected copy-to-clipboard icon.
+ */
+function getCodeTextContent(codeEl: Element): string | null {
+	// Get only direct text nodes (not the copy icon span)
+	let content = "";
+	for (const child of Array.from(codeEl.childNodes)) {
+		if (child.nodeType === Node.TEXT_NODE) {
+			content += child.textContent ?? "";
+		}
+	}
+	return content || null;
 }
