@@ -1,4 +1,5 @@
 import type { MarkdownPostProcessor } from "obsidian";
+import { Component, MarkdownRenderer, type App } from "obsidian";
 import { KNOWN_DIRECTIVES } from "src/shared/myst-types";
 
 /**
@@ -24,6 +25,13 @@ const TRAILING_CLOSE_FENCE_RE = /\n:::+\s*$/;
 const STANDALONE_CLOSE_FENCE_RE = /^:::+\s*$/;
 
 const OPEN_PLACEHOLDER_CLASS = "myst-directive-open";
+
+/** App reference for MarkdownRenderer.render (math directives) */
+let directiveApp: App | null = null;
+
+export function setDirectiveRendererApp(app: App): void {
+	directiveApp = app;
+}
 
 function processFenceDirectives(el: HTMLElement): void {
 	// Check if this section contains a closing fence that completes
@@ -390,8 +398,32 @@ function createCodeBlockElement(parsed: ParsedDirective, container: HTMLElement)
 }
 
 function createMathElement(parsed: ParsedDirective, container: HTMLElement): HTMLElement {
-	const mathEl = container.createSpan({ cls: "math math-block" });
-	mathEl.textContent = parsed.body;
+	if (directiveApp) {
+		// Render $$body$$ through Obsidian's MathJax pipeline.
+		// MarkdownRenderer.render wraps in a block div, so we render
+		// into a temp container and move the math element out.
+		const tempDiv = document.body.createDiv({ cls: "myst-math-temp" });
+		tempDiv.style.display = "none";
+		MarkdownRenderer.render(
+			directiveApp,
+			`$$${parsed.body}$$`,
+			tempDiv,
+			"",
+			new Component(),
+		);
+		const mathEl = tempDiv.querySelector(".math-block") ?? tempDiv.querySelector(".math");
+		if (mathEl) {
+			container.appendChild(mathEl.cloneNode(true));
+		} else {
+			// Fallback: use whatever was rendered
+			container.innerHTML = tempDiv.innerHTML;
+		}
+		tempDiv.remove();
+	} else {
+		// Fallback: plain text
+		const mathEl = container.createSpan({ cls: "math math-block" });
+		mathEl.textContent = parsed.body;
+	}
 
 	if (parsed.options.label) {
 		container.setAttribute("data-label", parsed.options.label);

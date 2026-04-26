@@ -25,7 +25,7 @@ export function setRoleRendererApp(app: App): void {
 	pluginApp = app;
 }
 
-export const rolePostProcessor: MarkdownPostProcessor = (el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
+export const rolePostProcessor: MarkdownPostProcessor = async (el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
 	// Pattern for a text node ending with {role-name}
 	const roleTextPattern = /\{([a-zA-Z][a-zA-Z0-9_:.-]*)\}$/;
 
@@ -64,14 +64,28 @@ export const rolePostProcessor: MarkdownPostProcessor = (el: HTMLElement, ctx: M
 		if (roleName === "math" || roleName === "m") {
 			const mathContainer = span.createSpan({ cls: "myst-role-math" });
 			if (pluginApp) {
-				// Render $content$ as markdown — Obsidian will invoke MathJax
-				MarkdownRenderer.render(
+				// Render $content$ as markdown — Obsidian will invoke MathJax.
+				// MarkdownRenderer.render() wraps output in a block div,
+				// which causes a line break for inline math. We render into
+				// a temporary container, then move only the math element out.
+				const tempDiv = document.body.createDiv({ cls: "myst-math-temp" });
+				tempDiv.style.display = "none";
+				await MarkdownRenderer.render(
 					pluginApp,
 					`$${codeContent}$`,
-					mathContainer,
+					tempDiv,
 					ctx.sourcePath,
 					new Component(),
 				);
+				// Find the rendered math element and move it into the span
+				const mathEl = tempDiv.querySelector(".math") ?? tempDiv.querySelector("span.math-inline");
+				if (mathEl) {
+					mathContainer.appendChild(mathEl.cloneNode(true));
+				} else {
+					// Fallback: use whatever was rendered
+					mathContainer.innerHTML = tempDiv.innerHTML;
+				}
+				tempDiv.remove();
 			} else {
 				// Fallback: plain text
 				mathContainer.textContent = codeContent;

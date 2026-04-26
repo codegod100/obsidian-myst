@@ -1,5 +1,5 @@
 import type MystPlugin from "src/main";
-import { directivePostProcessor } from "src/reading/directive-renderer";
+import { directivePostProcessor, setDirectiveRendererApp } from "src/reading/directive-renderer";
 import { rolePostProcessor, setRoleRendererApp } from "src/reading/role-renderer";
 import { dollarMathPostProcessor } from "src/reading/math-renderer";
 import { calloutBridgePostProcessor } from "src/reading/callout-bridge";
@@ -21,8 +21,9 @@ import { calloutBridgePostProcessor } from "src/reading/callout-bridge";
 export function registerReadingMode(plugin: MystPlugin): void {
 	const { settings } = plugin;
 
-	// Provide app reference for MarkdownRenderer.render (math roles)
+	// Provide app reference for MarkdownRenderer.render (math roles/directives)
 	setRoleRendererApp(plugin.app);
+	setDirectiveRendererApp(plugin.app);
 
 	if (settings.enableDirectives) {
 		plugin.registerMarkdownPostProcessor(directivePostProcessor);
