@@ -4,18 +4,12 @@ import { KNOWN_DIRECTIVES } from "src/shared/myst-types";
 /**
  * Post-processor for MyST directives.
  *
- * Obsidian's remark parser doesn't recognize `:::` as a code fence — it renders
- * `:::{note}\ncontent\n:::` as a single <p> element with <br> tags:
- *   <p>:::{note}<br>content<br>:::</p>
- *
- * So we scan child elements whose text content contains the full
- * `:::{name}` ... `:::` pattern, parse it, and replace the element.
- *
- * We also handle the multi-paragraph case (blank lines between sections)
- * where opening fence, body, and closing fence are separate <p> elements.
- *
- * And we handle the ````{name}```` code-block form where Obsidian renders
- * `<pre><code class="language-{name}">` elements.
+ * Obsidian processes sections independently — sometimes before they're
+ * attached to the DOM. PDF export may pass the entire document as one
+ * element. So we:
+ * - Process ALL matching children (no early return after first match)
+ * - Use document-level placeholder search for cross-section directives
+ * - Handle both single-element and multi-element directive blocks
  */
 export const directivePostProcessor: MarkdownPostProcessor = (el: HTMLElement) => {
 	processFenceDirectives(el);
@@ -25,17 +19,23 @@ export const directivePostProcessor: MarkdownPostProcessor = (el: HTMLElement) =
 // --- ::: fence form ---
 
 const OPEN_FENCE_RE = /^:::+\s*\{([a-zA-Z][a-zA-Z0-9_:.-]*)\}/;
-const CLOSE_FENCE_RE = /^:::+\s*$/;
-
-/**
- * Full directive block pattern — matches the entire `:::{name}` ... `:::` 
- * within a single text node. Captures: directive name, rest of opening line, body.
- */
 const DIRECTIVE_BLOCK_RE = /(^|[\n\r]):::+\s*\{([a-zA-Z][a-zA-Z0-9_:.-]*)\}([^\n\r]*)([\s\S]*?)\n:::+\s*$/m;
+const TRAILING_CLOSE_FENCE_RE = /\n:::+\s*$/;
+const STANDALONE_CLOSE_FENCE_RE = /^:::+\s*$/;
+
+const OPEN_PLACEHOLDER_CLASS = "myst-directive-open";
 
 function processFenceDirectives(el: HTMLElement): void {
-	// Case 1: Single element containing the full directive block
-	// (most common — Obsidian renders `:::{note}\ncontent\n:::` as one <p>)
+	// Check if this section contains a closing fence that completes
+	// a previously opened directive from a different section.
+	const placeholder = document.querySelector(`.${OPEN_PLACEHOLDER_CLASS}`);
+	if (placeholder && placeholder instanceof HTMLElement) {
+		tryCloseFromDocument(el, placeholder);
+		// Don't return — this section might also have its own directives
+	}
+
+	// Case 1: Single elements containing the full directive block
+	// Process ALL matching children, not just the first one
 	for (const child of Array.from(el.children)) {
 		if (!(child instanceof HTMLElement)) continue;
 
@@ -56,11 +56,9 @@ function processFenceDirectives(el: HTMLElement): void {
 
 		const container = createDirectiveElement(parsed);
 		child.replaceWith(container);
-		return; // Post-processor re-runs for each section; one match per call
 	}
 
-	// Case 2: Multi-element — opening fence, body paragraphs, closing fence
-	// are separate child elements (happens when blank lines separate them)
+	// Case 2: Multi-element within this section
 	const children = Array.from(el.children);
 	let i = 0;
 
@@ -71,7 +69,7 @@ function processFenceDirectives(el: HTMLElement): void {
 			continue;
 		}
 
-		const text = child.textContent?.trim() ?? "";
+		const text = child.textContent ?? "";
 		const openMatch = text.match(OPEN_FENCE_RE);
 
 		if (openMatch) {
@@ -82,9 +80,9 @@ function processFenceDirectives(el: HTMLElement): void {
 			}
 
 			const restOfLine = text.replace(OPEN_FENCE_RE, "").trim();
+			const openingParsed = parseDirectiveSource(restOfLine, directiveName);
 
-			// Collect body elements until closing fence
-			const bodyElements: HTMLElement[] = [];
+			const bodyParts: string[] = [];
 			let closed = false;
 			let j = i + 1;
 
@@ -95,44 +93,149 @@ function processFenceDirectives(el: HTMLElement): void {
 					continue;
 				}
 
-				const siblingText = sibling.textContent?.trim() ?? "";
-				if (CLOSE_FENCE_RE.test(siblingText)) {
+				const siblingText = sibling.textContent ?? "";
+
+				if (STANDALONE_CLOSE_FENCE_RE.test(siblingText.trim())) {
 					closed = true;
 					j++;
 					break;
 				}
-				bodyElements.push(sibling);
+
+				const trailingMatch = siblingText.match(TRAILING_CLOSE_FENCE_RE);
+				if (trailingMatch) {
+					const bodyBefore = siblingText.slice(0, trailingMatch.index).trim();
+					if (bodyBefore) bodyParts.push(bodyBefore);
+					closed = true;
+					j++;
+					break;
+				}
+
+				bodyParts.push(siblingText.trim());
 				j++;
 			}
 
 			if (closed) {
-				const bodyText = bodyElements.map((e) => e.textContent ?? "").join("\n");
-				const parsed = parseDirectiveSource(
-					restOfLine ? restOfLine + "\n" + bodyText : bodyText,
-					directiveName,
-				);
+				const fullBody = [...openingParsed.body.split("\n").filter((l) => l), ...bodyParts].join("\n");
+				const parsed: ParsedDirective = {
+					name: directiveName,
+					argument: openingParsed.argument,
+					options: openingParsed.options,
+					body: fullBody,
+				};
 
 				const container = createDirectiveElement(parsed);
-
-				// Remove old elements
 				child.remove();
-				for (const bodyEl of bodyElements) {
-					bodyEl.remove();
+				for (let k = i + 1; k < j; k++) {
+					if (children[k] instanceof HTMLElement) {
+						children[k].remove();
+					}
 				}
-				const closeEl = children[j - 1];
-				if (closeEl instanceof HTMLElement) {
-					closeEl.remove();
-				}
-
-				el.insertBefore(container, children[i + 1] ?? null);
+				el.insertBefore(container, children[Math.min(j, children.length)] ?? null);
 				i = j;
 			} else {
-				i++;
+				// No closing fence in this section — place a DOM placeholder
+				const placeholder = document.createElement("div");
+				placeholder.addClass(OPEN_PLACEHOLDER_CLASS);
+				placeholder.setAttribute("data-directive-name", directiveName);
+				placeholder.setAttribute("data-directive-argument", openingParsed.argument);
+				placeholder.setAttribute("data-directive-body", [openingParsed.body, ...bodyParts].filter((p) => p.trim()).join("\n"));
+				for (const [key, value] of Object.entries(openingParsed.options)) {
+					placeholder.setAttribute(`data-directive-opt-${key}`, value);
+				}
+				placeholder.style.display = "none";
+				child.replaceWith(placeholder);
+				for (let k = i + 1; k < j; k++) {
+					if (children[k] instanceof HTMLElement) {
+						children[k].remove();
+					}
+				}
+				i = j;
 			}
 		} else {
 			i++;
 		}
 	}
+}
+
+/**
+ * Try to close an open directive by finding a placeholder in the document
+ * and a closing fence in the current section.
+ */
+function tryCloseFromDocument(el: HTMLElement, placeholder: HTMLElement): boolean {
+	const children = Array.from(el.children);
+	const bodyParts: string[] = [];
+	let closed = false;
+
+	for (const child of children) {
+		if (!(child instanceof HTMLElement)) continue;
+
+		const text = child.textContent ?? "";
+
+		if (STANDALONE_CLOSE_FENCE_RE.test(text.trim())) {
+			closed = true;
+			break;
+		}
+
+		const trailingMatch = text.match(TRAILING_CLOSE_FENCE_RE);
+		if (trailingMatch) {
+			const bodyBefore = text.slice(0, trailingMatch.index).trim();
+			if (bodyBefore) bodyParts.push(bodyBefore);
+			closed = true;
+			break;
+		}
+
+		// Don't consume new opening fences as body content
+		if (OPEN_FENCE_RE.test(text)) {
+			break;
+		}
+
+		if (text.trim()) {
+			bodyParts.push(text.trim());
+		}
+	}
+
+	if (!closed) return false;
+
+	const directiveName = placeholder.getAttribute("data-directive-name") ?? "";
+	const argument = placeholder.getAttribute("data-directive-argument") ?? "";
+	const existingBody = placeholder.getAttribute("data-directive-body") ?? "";
+
+	const options: Record<string, string> = {};
+	for (const attr of Array.from(placeholder.attributes)) {
+		if (attr.name.startsWith("data-directive-opt-")) {
+			const key = attr.name.slice("data-directive-opt-".length);
+			options[key] = attr.value;
+		}
+	}
+
+	const fullBody = [existingBody, ...bodyParts].filter((p) => p.trim()).join("\n");
+
+	const parsed: ParsedDirective = {
+		name: directiveName,
+		argument,
+		options,
+		body: fullBody,
+	};
+
+	const container = createDirectiveElement(parsed);
+	placeholder.replaceWith(container);
+
+	// Remove consumed elements from this section
+	for (const child of Array.from(el.children)) {
+		if (!(child instanceof HTMLElement)) continue;
+		const text = child.textContent ?? "";
+		if (STANDALONE_CLOSE_FENCE_RE.test(text.trim())) {
+			child.remove();
+			break;
+		}
+		if (TRAILING_CLOSE_FENCE_RE.test(text)) {
+			child.remove();
+			break;
+		}
+		child.remove();
+	}
+
+	return true;
 }
 
 // --- Code-block form ---
@@ -155,14 +258,9 @@ function processCodeBlockDirectives(el: HTMLElement): void {
 	}
 }
 
-/**
- * Extract a MyST directive name from a code element's class list.
- * Obsidian renders ```{note} as <code class="language-{note}">.
- */
 function extractDirectiveLanguage(code: HTMLElement): string | null {
 	const classes = code.className;
 
-	// Match language-{name} patterns (with braces)
 	const langMatch = classes.match(/language-\{([^}]+)\}/);
 	if (langMatch) {
 		const name = langMatch[1];
@@ -171,7 +269,6 @@ function extractDirectiveLanguage(code: HTMLElement): string | null {
 		}
 	}
 
-	// Also match plain language-name (without braces) for known directives
 	const plainMatch = classes.match(/language-([a-z][-a-z]*)/);
 	if (plainMatch) {
 		const name = plainMatch[1];
@@ -190,7 +287,19 @@ function createDirectiveElement(parsed: ParsedDirective): HTMLElement {
 	container.className = "myst-directive";
 	container.addClass(`myst-directive-${parsed.name}`);
 
-	// Header with directive name and argument
+	if (parsed.name === "figure") {
+		return createFigureElement(parsed, container);
+	}
+	if (parsed.name === "image") {
+		return createImageElement(parsed, container);
+	}
+	if (parsed.name === "code-block") {
+		return createCodeBlockElement(parsed, container);
+	}
+	if (parsed.name === "math") {
+		return createMathElement(parsed, container);
+	}
+
 	if (parsed.argument || parsed.name) {
 		const header = container.createDiv({ cls: "myst-directive-header" });
 		const label = header.createSpan({ cls: "myst-directive-label" });
@@ -201,7 +310,6 @@ function createDirectiveElement(parsed: ParsedDirective): HTMLElement {
 		}
 	}
 
-	// Options (if any)
 	if (Object.keys(parsed.options).length > 0) {
 		const optionsEl = container.createDiv({ cls: "myst-directive-options" });
 		for (const [key, value] of Object.entries(parsed.options)) {
@@ -213,7 +321,6 @@ function createDirectiveElement(parsed: ParsedDirective): HTMLElement {
 		}
 	}
 
-	// Body
 	if (parsed.body) {
 		const bodyEl = container.createDiv({ cls: "myst-directive-body" });
 		const lines = parsed.body.split("\n");
@@ -224,10 +331,70 @@ function createDirectiveElement(parsed: ParsedDirective): HTMLElement {
 		}
 	}
 
-	// Admonition-specific styling
 	if (isAdmonitionDirective(parsed.name)) {
 		container.addClass("myst-admonition");
 		container.addClass(`myst-admonition-${parsed.name}`);
+	}
+
+	return container;
+}
+
+function createFigureElement(parsed: ParsedDirective, container: HTMLElement): HTMLElement {
+	const img = container.createEl("img", {
+		cls: "myst-figure-image",
+		attr: {
+			src: parsed.argument,
+			alt: parsed.options.alt ?? "",
+		},
+	});
+
+	if (parsed.options.width) img.setAttribute("width", parsed.options.width);
+	if (parsed.options.height) img.setAttribute("height", parsed.options.height);
+	if (parsed.options.align) container.addClass(`myst-figure-${parsed.options.align}`);
+
+	if (parsed.body) {
+		const caption = container.createDiv({ cls: "myst-figure-caption" });
+		caption.textContent = parsed.body;
+	}
+
+	return container;
+}
+
+function createImageElement(parsed: ParsedDirective, container: HTMLElement): HTMLElement {
+	const img = container.createEl("img", {
+		cls: "myst-image",
+		attr: {
+			src: parsed.argument,
+			alt: parsed.options.alt ?? "",
+		},
+	});
+
+	if (parsed.options.width) img.setAttribute("width", parsed.options.width);
+	if (parsed.options.height) img.setAttribute("height", parsed.options.height);
+
+	return container;
+}
+
+function createCodeBlockElement(parsed: ParsedDirective, container: HTMLElement): HTMLElement {
+	const pre = container.createEl("pre", { cls: "myst-code-block" });
+	const code = pre.createEl("code", { cls: `language-${parsed.argument}` });
+	code.textContent = parsed.body;
+
+	if (parsed.options.linenos) container.addClass("myst-code-linenos");
+	if (parsed.options.caption) {
+		const caption = container.createDiv({ cls: "myst-code-caption" });
+		caption.textContent = parsed.options.caption;
+	}
+
+	return container;
+}
+
+function createMathElement(parsed: ParsedDirective, container: HTMLElement): HTMLElement {
+	const mathEl = container.createSpan({ cls: "math math-block" });
+	mathEl.textContent = parsed.body;
+
+	if (parsed.options.label) {
+		container.setAttribute("data-label", parsed.options.label);
 	}
 
 	return container;
@@ -240,16 +407,6 @@ interface ParsedDirective {
 	body: string;
 }
 
-/**
- * Parse raw directive source into structured parts.
- *
- * Expected format:
- *   Title argument
- *   :option-key: option value
- *   :another-key: another value
- *
- *   Body content starts after blank line.
- */
 function parseDirectiveSource(source: string, directiveName: string): ParsedDirective {
 	const lines = source.split("\n");
 	let argument = "";
@@ -264,27 +421,23 @@ function parseDirectiveSource(source: string, directiveName: string): ParsedDire
 			continue;
 		}
 
-		// Blank line separates options from body
 		if (line.trim() === "") {
 			blankLineSeen = true;
 			pastOptions = true;
 			continue;
 		}
 
-		// Option line: :key: value
 		const optionMatch = line.match(/^:([a-zA-Z0-9_-]+):\s*(.*)/);
 		if (optionMatch && !blankLineSeen) {
 			options[optionMatch[1]] = optionMatch[2].trim();
 			continue;
 		}
 
-		// If we haven't seen options yet and this isn't an option, it's the argument
 		if (!argument && !blankLineSeen) {
 			argument = line.trim();
 			continue;
 		}
 
-		// Everything else is body
 		pastOptions = true;
 		bodyLines.push(line);
 	}
