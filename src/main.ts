@@ -7,7 +7,7 @@ import { AtpAuthManager } from "src/auth";
 import { publishNoteToPds } from "src/export/publish";
 
 const ATP_OAUTH_CLIENT_ID = "https://codegod100.github.io/obsidian-callback/clients/myst.json";
-const ATP_OAUTH_REDIRECT_URI = "https://codegod100.github.io/obsidian-callback/callback.html?scheme=myst-oauth";
+const ATP_OAUTH_REDIRECT_URI = "https://codegod100.github.io/obsidian-callback/callback-myst.html";
 const ATP_OAUTH_SCOPE = "atproto transition:generic";
 const ATP_PROTOCOL_SCHEME = "myst-oauth";
 
