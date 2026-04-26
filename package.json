@@ -1,0 +1,33 @@
+{
+	"name": "obsidian-myst",
+	"version": "0.1.0",
+	"description": "MyST Markdown support for Obsidian — roles, directives, admonitions, dollar-math, cross-references",
+	"main": "main.js",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "node esbuild.config.mjs production",
+		"typecheck": "tsc --noEmit"
+	},
+	"keywords": ["obsidian", "myst", "markdown", "directives", "roles", "admonitions"],
+	"author": "nandi",
+	"license": "MIT",
+	"devDependencies": {
+		"@codemirror/autocomplete": "^6.0.0",
+		"@codemirror/commands": "^6.0.0",
+		"@codemirror/language": "^6.0.0",
+		"@codemirror/search": "^6.0.0",
+		"@codemirror/state": "^6.0.0",
+		"@codemirror/view": "^6.0.0",
+		"@lezer/common": "^1.0.0",
+		"@lezer/highlight": "^1.0.0",
+		"@lezer/lr": "^1.0.0",
+		"@types/node": "^20.0.0",
+		"builtin-modules": "^4.0.0",
+		"esbuild": "^0.20.0",
+		"obsidian": "^1.12.0",
+		"typescript": "^5.4.0"
+	},
+	"dependencies": {
+		"markdown-it-myst": "^1.0.16"
+	}
+}

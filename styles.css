@@ -1,0 +1,186 @@
+/* MyST Plugin Styles */
+
+/* === Reading Mode === */
+
+/* Directive blocks */
+.myst-directive {
+	border-left: 3px solid var(--interactive-accent);
+	padding: 0.5em 1em;
+	margin: 0.5em 0;
+	border-radius: 4px;
+	background: var(--background-secondary);
+}
+
+.myst-directive-header {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	margin-bottom: 0.5em;
+}
+
+.myst-directive-label {
+	font-size: 0.85em;
+	font-weight: 600;
+	color: var(--interactive-accent);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+.myst-directive-title {
+	font-weight: 600;
+}
+
+.myst-directive-options {
+	font-size: 0.85em;
+	color: var(--text-muted);
+	margin-bottom: 0.5em;
+}
+
+.myst-directive-option {
+	display: flex;
+	gap: 0.25em;
+}
+
+.myst-directive-option-key {
+	font-weight: 600;
+	color: var(--text-muted);
+}
+
+.myst-directive-option-value {
+	color: var(--text-normal);
+}
+
+.myst-directive-body p {
+	margin: 0;
+}
+
+.myst-directive-blank-line {
+	height: 0.5em;
+}
+
+/* Admonition directives */
+.myst-admonition {
+	border-radius: 4px;
+	padding: 0.75em 1em;
+	margin: 0.75em 0;
+	border-left: 4px solid var(--interactive-accent);
+}
+
+.myst-admonition-note {
+	border-left-color: #448aff;
+}
+
+.myst-admonition-warning {
+	border-left-color: #ff9800;
+}
+
+.myst-admonition-danger {
+	border-left-color: #f44336;
+}
+
+.myst-admonition-tip {
+	border-left-color: #4caf50;
+}
+
+.myst-admonition-important {
+	border-left-color: #9c27b0;
+}
+
+.myst-admonition-caution {
+	border-left-color: #ff5722;
+}
+
+.myst-admonition-hint {
+	border-left-color: #00bcd4;
+}
+
+.myst-admonition-seealso {
+	border-left-color: #607d8b;
+}
+
+.myst-admonition .myst-directive-label {
+	color: inherit;
+	opacity: 0.7;
+}
+
+/* Callout bridge — MyST label on existing callouts */
+.myst-admonition-label {
+	font-size: 0.75em;
+	font-family: var(--font-monospace);
+	color: var(--text-faint);
+	margin-left: 0.5em;
+}
+
+/* Inline roles */
+.myst-role {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 0.15em;
+	padding: 0.1em 0.3em;
+	border-radius: 3px;
+	background: var(--background-secondary-alt);
+	font-size: 0.9em;
+}
+
+.myst-role-label {
+	font-size: 0.8em;
+	font-family: var(--font-monospace);
+	color: var(--text-muted);
+}
+
+.myst-role-content {
+	color: var(--text-normal);
+}
+
+/* Dollar math */
+.myst-dollar-math {
+	font-family: var(--font-monospace);
+	font-style: italic;
+	color: var(--text-accent);
+}
+
+/* === Editor Mode (CM6) === */
+
+/* Directive fence */
+.cm-myst-directive-fence {
+	color: #c678dd;
+	font-weight: bold;
+}
+
+/* Directive options */
+.cm-myst-directive-option {
+	color: #61afef;
+}
+
+/* Role syntax */
+.cm-myst-role {
+	color: #56b6c2;
+}
+
+/* Dollar math */
+.cm-myst-dollar-math {
+	color: #d19a66;
+}
+
+/* Directive header widget */
+.cm-myst-directive-header-widget {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	padding: 0.25em 0.5em;
+	background: var(--background-secondary);
+	border-radius: 3px;
+	border-left: 3px solid var(--interactive-accent);
+}
+
+.cm-myst-directive-label {
+	font-size: 0.85em;
+	font-weight: 600;
+	color: var(--interactive-accent);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+.cm-myst-directive-title {
+	font-weight: 600;
+}

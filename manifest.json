@@ -1,0 +1,10 @@
+{
+	"id": "myst",
+	"name": "MyST Markdown",
+	"version": "0.1.0",
+	"minAppVersion": "1.4.0",
+	"description": "MyST Markdown support — roles, directives, admonitions, dollar-math, cross-references, and callout mapping",
+	"author": "nandi",
+	"authorUrl": "https://nandi.latha.org",
+	"isDesktopOnly": false
+}
