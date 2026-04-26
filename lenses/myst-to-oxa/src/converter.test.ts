@@ -257,7 +257,7 @@ describe("convertMystToOxa", () => {
     });
   });
 
-  it("drops unknown block types", () => {
+  it("converts blockquotes, images, math blocks, and lists", () => {
     const doc: MystDocument = {
       type: "document",
       children: [
@@ -265,10 +265,20 @@ describe("convertMystToOxa", () => {
           type: "blockquote",
           children: [{ type: "paragraph", children: [{ type: "text", value: "quoted" }] }],
         },
-        { type: "image", src: "https://example.com/img.png" },
+        { type: "image", src: "https://example.com/img.png", alt: "alt text" },
         { type: "math_block", value: "E = mc^2" },
-        { type: "ordered_list", children: [] },
-        { type: "unordered_list", children: [] },
+        {
+          type: "ordered_list",
+          children: [
+            { type: "list_item", children: [{ type: "paragraph", children: [{ type: "text", value: "first" }] }] },
+          ],
+        },
+        {
+          type: "unordered_list",
+          children: [
+            { type: "list_item", children: [{ type: "paragraph", children: [{ type: "text", value: "bullet" }] }] },
+          ],
+        },
       ],
     };
 
@@ -276,11 +286,32 @@ describe("convertMystToOxa", () => {
 
     expect(result).toEqual({
       type: "Document",
-      children: [],
+      children: [
+        {
+          type: "Blockquote",
+          children: [{ type: "Paragraph", children: [{ type: "Text", value: "quoted" }] }],
+        },
+        { type: "Image", src: "https://example.com/img.png", alt: "alt text" },
+        { type: "Math", value: "E = mc^2" },
+        {
+          type: "List",
+          ordered: true,
+          children: [
+            { type: "ListItem", children: [{ type: "Paragraph", children: [{ type: "Text", value: "first" }] }] },
+          ],
+        },
+        {
+          type: "List",
+          ordered: false,
+          children: [
+            { type: "ListItem", children: [{ type: "Paragraph", children: [{ type: "Text", value: "bullet" }] }] },
+          ],
+        },
+      ],
     });
   });
 
-  it("drops unknown directives", () => {
+  it("converts math directive to Math block", () => {
     const doc: MystDocument = {
       type: "document",
       children: [
@@ -290,6 +321,134 @@ describe("convertMystToOxa", () => {
           argument: "",
           options: {},
           body: "E = mc^2",
+        },
+      ],
+    };
+
+    const result = convertMystToOxa(doc);
+
+    expect(result).toEqual({
+      type: "Document",
+      children: [
+        { type: "Math", value: "E = mc^2" },
+      ],
+    });
+  });
+
+  it("converts admonition directives", () => {
+    const doc: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "directive",
+          name: "note",
+          argument: "",
+          options: {},
+          body: "Some info.",
+        },
+        {
+          type: "directive",
+          name: "warning",
+          argument: "Watch out",
+          options: {},
+          body: "Be careful.",
+        },
+      ],
+    };
+
+    const result = convertMystToOxa(doc);
+
+    expect(result).toEqual({
+      type: "Document",
+      children: [
+        {
+          type: "Admonition",
+          kind: "note",
+          children: [
+            { type: "Paragraph", children: [{ type: "Text", value: "Some info." }] },
+          ],
+        },
+        {
+          type: "Admonition",
+          kind: "warning",
+          title: "Watch out",
+          children: [
+            { type: "Paragraph", children: [{ type: "Text", value: "Be careful." }] },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("converts figure directive to Image", () => {
+    const doc: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "directive",
+          name: "figure",
+          argument: "photo.png",
+          options: { alt: "A photo", width: "50%" },
+          body: "Caption text.",
+        },
+      ],
+    };
+
+    const result = convertMystToOxa(doc);
+
+    expect(result).toEqual({
+      type: "Document",
+      children: [
+        {
+          type: "Image",
+          src: "photo.png",
+          alt: "A photo",
+          data: { caption: "Caption text.", alt: "A photo", width: "50%" },
+        },
+      ],
+    });
+  });
+
+  it("converts {math} role to InlineCode with latex language", () => {
+    const doc: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "paragraph",
+          children: [
+            { type: "text", value: "Equation: " },
+            { type: "role", name: "math", content: "a^2 + b^2" },
+          ],
+        },
+      ],
+    };
+
+    const result = convertMystToOxa(doc);
+
+    expect(result).toEqual({
+      type: "Document",
+      children: [
+        {
+          type: "Paragraph",
+          children: [
+            { type: "Text", value: "Equation: " },
+            { type: "InlineCode", value: "a^2 + b^2", language: "latex" },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("drops truly unknown directives without body", () => {
+    const doc: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "directive",
+          name: "custom-thing",
+          argument: "",
+          options: {},
+          body: "",
         },
       ],
     };

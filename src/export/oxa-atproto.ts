@@ -64,7 +64,51 @@ type AtprotoThematicBreak = OxaBlockBase & {
 	$type: "pub.oxa.blocks.defs#thematicBreak";
 };
 
-type AtprotoBlock = AtprotoParagraph | AtprotoHeading | AtprotoCode | AtprotoThematicBreak;
+type AtprotoBlockquote = OxaBlockBase & {
+	$type: "pub.oxa.blocks.defs#blockquote";
+	children: AtprotoBlock[];
+};
+
+type AtprotoImage = OxaBlockBase & {
+	$type: "pub.oxa.blocks.defs#image";
+	src: string;
+	alt?: string;
+};
+
+type AtprotoMath = OxaBlockBase & {
+	$type: "pub.oxa.blocks.defs#math";
+	value: string;
+};
+
+type AtprotoList = OxaBlockBase & {
+	$type: "pub.oxa.blocks.defs#list";
+	ordered: boolean;
+	startIndex?: number;
+	children: AtprotoListItem[];
+};
+
+type AtprotoListItem = OxaBlockBase & {
+	$type: "pub.oxa.blocks.defs#listItem";
+	children: AtprotoBlock[];
+};
+
+type AtprotoAdmonition = OxaBlockBase & {
+	$type: "pub.oxa.blocks.defs#admonition";
+	kind: string;
+	title?: string;
+	children: AtprotoBlock[];
+};
+
+type AtprotoBlock =
+	| AtprotoParagraph
+	| AtprotoHeading
+	| AtprotoCode
+	| AtprotoThematicBreak
+	| AtprotoBlockquote
+	| AtprotoImage
+	| AtprotoMath
+	| AtprotoList
+	| AtprotoAdmonition;
 
 export interface AtprotoDocument {
 	$type: "pub.oxa.document";
@@ -201,6 +245,17 @@ function mapCodeBlock(block: OxaBlock & { value: string; language?: string }): A
 	return result;
 }
 
+function mapBlocks(blocks: OxaBlock[]): AtprotoBlock[] {
+	const result: AtprotoBlock[] = [];
+	for (const block of blocks) {
+		const mapped = mapBlock(block);
+		if (mapped !== undefined) {
+			result.push(mapped);
+		}
+	}
+	return result;
+}
+
 function mapBlock(block: OxaBlock): AtprotoBlock | undefined {
 	switch (block.type) {
 		case "Paragraph": {
@@ -219,6 +274,58 @@ function mapBlock(block: OxaBlock): AtprotoBlock | undefined {
 			return mapCodeBlock(block as OxaBlock & { value: string; language?: string });
 		case "ThematicBreak":
 			return { $type: "pub.oxa.blocks.defs#thematicBreak", ...copyBlockProps(block) };
+		case "Blockquote": {
+			const bq = block as OxaBlock & { children: OxaBlock[] };
+			return {
+				$type: "pub.oxa.blocks.defs#blockquote",
+				...copyBlockProps(block),
+				children: mapBlocks(bq.children),
+			};
+		}
+		case "Image": {
+			const img = block as OxaBlock & { src: string; alt?: string };
+			const result: AtprotoImage = {
+				$type: "pub.oxa.blocks.defs#image",
+				...copyBlockProps(block),
+				src: img.src,
+			};
+			if (img.alt !== undefined) result.alt = img.alt;
+			return result;
+		}
+		case "Math": {
+			const math = block as OxaBlock & { value: string };
+			return {
+				$type: "pub.oxa.blocks.defs#math",
+				...copyBlockProps(block),
+				value: math.value,
+			};
+		}
+		case "List": {
+			const list = block as OxaBlock & { ordered: boolean; startIndex?: number; children: any[] };
+			const result: AtprotoList = {
+				$type: "pub.oxa.blocks.defs#list",
+				...copyBlockProps(block),
+				ordered: list.ordered,
+				children: list.children.map((item: any) => ({
+					$type: "pub.oxa.blocks.defs#listItem",
+					...copyBlockProps(item),
+					children: mapBlocks(item.children),
+				})),
+			};
+			if (list.startIndex !== undefined) result.startIndex = list.startIndex;
+			return result;
+		}
+		case "Admonition": {
+			const adm = block as OxaBlock & { kind: string; title?: string; children: OxaBlock[] };
+			const result: AtprotoAdmonition = {
+				$type: "pub.oxa.blocks.defs#admonition",
+				...copyBlockProps(block),
+				kind: adm.kind,
+				children: mapBlocks(adm.children),
+			};
+			if (adm.title !== undefined) result.title = adm.title;
+			return result;
+		}
 		default:
 			return undefined;
 	}
@@ -243,14 +350,7 @@ export function oxaToAtproto(
 	document: OxaDocument,
 	options: OxaToAtprotoOptions = {},
 ): AtprotoDocument {
-	const children: AtprotoBlock[] = [];
-
-	for (const block of document.children) {
-		const mapped = mapBlock(block);
-		if (mapped !== undefined) {
-			children.push(mapped);
-		}
-	}
+	const children = mapBlocks(document.children);
 
 	const result: AtprotoDocument = {
 		$type: "pub.oxa.document",

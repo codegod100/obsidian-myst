@@ -183,7 +183,51 @@ export interface OxaThematicBreak extends OxaBlockBase {
   type: "ThematicBreak";
 }
 
-export type OxaBlock = OxaParagraph | OxaHeading | OxaCode | OxaThematicBreak;
+export interface OxaBlockquote extends OxaBlockBase {
+  type: "Blockquote";
+  children: OxaBlock[];
+}
+
+export interface OxaImage extends OxaBlockBase {
+  type: "Image";
+  src: string;
+  alt?: string;
+}
+
+export interface OxaMath extends OxaBlockBase {
+  type: "Math";
+  value: string;
+}
+
+export interface OxaList extends OxaBlockBase {
+  type: "List";
+  ordered: boolean;
+  startIndex?: number;
+  children: OxaListItem[];
+}
+
+export interface OxaListItem extends OxaBlockBase {
+  type: "ListItem";
+  children: OxaBlock[];
+}
+
+export interface OxaAdmonition extends OxaBlockBase {
+  type: "Admonition";
+  kind: string;
+  title?: string;
+  children: OxaBlock[];
+}
+
+export type OxaBlock =
+  | OxaParagraph
+  | OxaHeading
+  | OxaCode
+  | OxaThematicBreak
+  | OxaBlockquote
+  | OxaImage
+  | OxaMath
+  | OxaList
+  | OxaAdmonition;
 
 export interface OxaDocument {
   type: "Document";

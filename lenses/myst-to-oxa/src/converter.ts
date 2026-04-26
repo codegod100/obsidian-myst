@@ -3,7 +3,7 @@
  *
  * This implements the `dev.panproto.myst-to-oxa` lens as a TypeScript runtime.
  * The subsequent OXA tree → ATProto flat-model conversion is handled by
- * `@oxa/core`'s `oxaToAtproto()`.
+ * `oxaToAtproto()` inlined in the plugin.
  */
 
 import type {
@@ -14,6 +14,11 @@ import type {
   MystParagraph,
   MystCodeBlock,
   MystThematicBreak,
+  MystBlockquote,
+  MystImage,
+  MystMathBlock,
+  MystOrderedList,
+  MystUnorderedList,
   MystDirective,
   MystRole,
   OxaDocument,
@@ -21,6 +26,7 @@ import type {
   OxaInline,
   OxaText,
   OxaBlockBase,
+  OxaListItem,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -70,6 +76,8 @@ function convertRole(role: MystRole): OxaInline | undefined {
   switch (role.name) {
     case "code":
       return { type: "InlineCode", value: role.content };
+    case "math":
+      return { type: "InlineCode", value: role.content, language: "latex" } as OxaInline;
     case "sup":
       return { type: "Superscript", children: [{ type: "Text", value: role.content } as OxaText] };
     case "sub":
@@ -125,7 +133,115 @@ function convertThematicBreak(_node: MystThematicBreak): OxaBlock {
   return { type: "ThematicBreak" };
 }
 
+function convertBlockquote(node: MystBlockquote): OxaBlock {
+  return {
+    ...copyBlockBase(node),
+    type: "Blockquote",
+    children: convertBlocks(node.children),
+  };
+}
+
+function convertImage(node: MystImage): OxaBlock {
+  const result: OxaBlock = {
+    ...copyBlockBase(node),
+    type: "Image",
+    src: node.src,
+  };
+  if (node.alt !== undefined) {
+    result.alt = node.alt;
+  }
+  return result;
+}
+
+function convertMathBlock(node: MystMathBlock): OxaBlock {
+  return {
+    ...copyBlockBase(node),
+    type: "Math",
+    value: node.value,
+  };
+}
+
+function convertOrderedList(node: MystOrderedList): OxaBlock {
+  const result: OxaBlock = {
+    ...copyBlockBase(node),
+    type: "List",
+    ordered: true,
+    children: convertListItems(node.children),
+  };
+  if (node.startIndex !== undefined) {
+    result.startIndex = node.startIndex;
+  }
+  return result;
+}
+
+function convertUnorderedList(node: MystUnorderedList): OxaBlock {
+  return {
+    ...copyBlockBase(node),
+    type: "List",
+    ordered: false,
+    children: convertListItems(node.children),
+  };
+}
+
+function convertListItems(items: MystBlock[]): OxaListItem[] {
+  // Each MystListItem is a MystBlock with type "list_item"
+  return items
+    .filter((item): item is MystBlock & { type: "list_item"; children: MystBlock[] } => item.type === "list_item")
+    .map((item) => ({
+      ...copyBlockBase(item),
+      type: "ListItem" as const,
+      children: convertBlocks(item.children),
+    }));
+}
+
+// Admonition directive names
+const ADMONITION_NAMES = new Set([
+  "note", "warning", "danger", "error", "tip", "important",
+  "caution", "attention", "hint", "seealso", "admonition",
+]);
+
 function convertDirective(directive: MystDirective): OxaBlock | undefined {
+  // Figure directive → Image
+  if (directive.name === "figure") {
+    const result: OxaBlock = {
+      ...copyBlockBase(directive),
+      type: "Image",
+      src: directive.argument || "",
+    };
+    if (directive.options.alt) {
+      result.alt = directive.options.alt;
+    }
+    // Body becomes caption (stored as data for now)
+    if (directive.body) {
+      result.data = { caption: directive.body, ...directive.options };
+    }
+    return result;
+  }
+
+  // Admonition directives → OxaAdmonition
+  if (ADMONITION_NAMES.has(directive.name)) {
+    const result: OxaBlock = {
+      ...copyBlockBase(directive),
+      type: "Admonition",
+      kind: directive.name,
+    };
+    if (directive.argument) {
+      result.title = directive.argument;
+    }
+    // Use nested children if available, otherwise parse body as paragraph
+    const children = (directive as any).children;
+    if (children && children.length > 0) {
+      result.children = convertBlocks(children);
+    } else if (directive.body) {
+      result.children = [{
+        type: "Paragraph",
+        children: [{ type: "Text", value: directive.body } as OxaText],
+      }];
+    }
+    return result;
+  }
+
+  // Code directives
   switch (directive.name) {
     case "code-block":
     case "code-cell": {
@@ -138,10 +254,51 @@ function convertDirective(directive: MystDirective): OxaBlock | undefined {
       }
       return result;
     }
-    default:
-      // Unknown directive — drop
+    case "math": {
+      return {
+        type: "Math",
+        value: directive.body,
+      };
+    }
+    default: {
+      // Unknown directives with children — convert as generic container
+      const children = (directive as any).children;
+      if (children && children.length > 0) {
+        return {
+          ...copyBlockBase(directive),
+          type: "Admonition",
+          kind: directive.name,
+          title: directive.argument || undefined,
+          children: convertBlocks(children),
+        };
+      }
+      // Unknown directives with body only — convert as admonition with body paragraph
+      if (directive.body) {
+        return {
+          ...copyBlockBase(directive),
+          type: "Admonition",
+          kind: directive.name,
+          title: directive.argument || undefined,
+          children: [{
+            type: "Paragraph",
+            children: [{ type: "Text", value: directive.body } as OxaText],
+          }],
+        };
+      }
       return undefined;
+    }
   }
+}
+
+function convertBlocks(nodes: MystBlock[]): OxaBlock[] {
+  const result: OxaBlock[] = [];
+  for (const node of nodes) {
+    const converted = convertBlock(node);
+    if (converted !== undefined) {
+      result.push(converted);
+    }
+  }
+  return result;
 }
 
 function convertBlock(node: MystBlock): OxaBlock | undefined {
@@ -154,10 +311,19 @@ function convertBlock(node: MystBlock): OxaBlock | undefined {
       return convertCodeBlock(node);
     case "thematic_break":
       return convertThematicBreak(node);
+    case "blockquote":
+      return convertBlockquote(node);
+    case "image":
+      return convertImage(node);
+    case "math_block":
+      return convertMathBlock(node);
+    case "ordered_list":
+      return convertOrderedList(node);
+    case "unordered_list":
+      return convertUnorderedList(node);
     case "directive":
       return convertDirective(node);
     default:
-      // blockquote, image, math_block, ordered_list, unordered_list — drop
       return undefined;
   }
 }
@@ -173,14 +339,7 @@ function convertBlock(node: MystBlock): OxaBlock | undefined {
  * @returns OXA tree-model document.
  */
 export function convertMystToOxa(doc: MystDocument): OxaDocument {
-  const children: OxaBlock[] = [];
-
-  for (const block of doc.children) {
-    const converted = convertBlock(block);
-    if (converted !== undefined) {
-      children.push(converted);
-    }
-  }
+  const children = convertBlocks(doc.children);
 
   const result: OxaDocument = {
     type: "Document",
