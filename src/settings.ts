@@ -8,6 +8,7 @@ export interface PluginSettings {
 	enableCalloutBridge: boolean;
 	enableEditorHighlighting: boolean;
 	concealDirectiveFences: boolean;
+	enableCodeExecution: boolean;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -17,6 +18,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	enableCalloutBridge: true,
 	enableEditorHighlighting: true,
 	concealDirectiveFences: false,
+	enableCodeExecution: true,
 };
 
 export class MystSettingTab extends PluginSettingTab {
@@ -147,6 +149,18 @@ export class MystSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.concealDirectiveFences)
 					.onChange(async (value) => {
 						this.plugin.settings.concealDirectiveFences = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Code execution")
+			.setDesc("Add Run buttons to {code-cell} directives (Python via Pyodide, JS/TS via sandbox)")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableCodeExecution)
+					.onChange(async (value) => {
+						this.plugin.settings.enableCodeExecution = value;
 						await this.plugin.saveSettings();
 					}),
 			);

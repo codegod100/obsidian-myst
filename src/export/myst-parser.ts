@@ -10,6 +10,7 @@
 
 import MarkdownIt from "markdown-it";
 import { directivePlugin, rolePlugin } from "markdown-it-myst";
+import { dollarmathPlugin } from "markdown-it-dollarmath";
 import type {
 	MystDocument,
 	MystBlock,
@@ -126,123 +127,12 @@ function colonFencePlugin(md: MarkdownIt): void {
 }
 
 // ---------------------------------------------------------------------------
-// Dollar-math rule for markdown-it
-// ---------------------------------------------------------------------------
-
-/**
- * Adds inline and block math rules for ``$...$`` and ``$$...$$`` syntax.
- * Produces ``math_inline`` and ``math_block`` tokens.
- */
-function dollarMathPlugin(md: MarkdownIt): void {
-	// Block math: $$...$$
-	md.block.ruler.before("paragraph", "math_block", function math_block(state, startLine, endLine, silent) {
-		const pos = state.bMarks[startLine] + state.tShift[startLine];
-		const max = state.eMarks[startLine];
-
-		if (pos + 1 > max) return false;
-		if (state.src.charCodeAt(pos) !== 0x24 /* $ */) return false;
-		if (state.src.charCodeAt(pos + 1) !== 0x24) return false;
-
-		// Check if it's a standalone $$ line (opening fence)
-		const afterDollar = pos + 2;
-		const restOfLine = state.src.slice(afterDollar, max).trim();
-
-		// Single-line display math: $$ E = mc^2 $$
-		if (restOfLine !== "") {
-			// Check if it ends with $$
-			if (restOfLine.endsWith("$$") && restOfLine.length > 2) {
-				if (silent) return true;
-				const content = restOfLine.slice(0, -2).trim();
-				const token = state.push("math_block", "math", 0);
-				token.content = content;
-				token.map = [startLine, startLine + 1];
-				token.markup = "$$";
-				state.line = startLine + 1;
-				return true;
-			}
-			// Not a display math block
-			return false;
-		}
-
-		// Multi-line: look for closing $$
-		let nextLine = startLine + 1;
-		let foundEnd = false;
-
-		while (nextLine < endLine) {
-			const npos = state.bMarks[nextLine] + state.tShift[nextLine];
-			const nmax = state.eMarks[nextLine];
-			if (npos + 1 <= nmax && state.src.charCodeAt(npos) === 0x24 && state.src.charCodeAt(npos + 1) === 0x24) {
-				const afterClose = npos + 2;
-				if (afterClose >= nmax || state.src.slice(afterClose, nmax).trim() === "") {
-					foundEnd = true;
-					break;
-				}
-			}
-			nextLine++;
-		}
-
-		if (!foundEnd) return false;
-
-		if (silent) return true;
-
-		const contentStart = state.bMarks[startLine + 1] + state.tShift[startLine + 1];
-		const contentEnd = state.bMarks[nextLine];
-		const content = state.src.slice(contentStart, contentEnd).trim();
-
-		const token = state.push("math_block", "math", 0);
-		token.content = content;
-		token.map = [startLine, nextLine + 1];
-		token.markup = "$$";
-
-		state.line = nextLine + 1;
-		return true;
-	});
-
-	// Inline math: $...$
-	md.inline.ruler.after("escape", "math_inline", function math_inline(state, silent) {
-		const pos = state.pos;
-		if (pos + 1 >= state.posMax) return false;
-		if (state.src.charCodeAt(pos) !== 0x24) return false;
-
-		// Don't match $$ (that's display math)
-		if (state.src.charCodeAt(pos + 1) === 0x24) return false;
-
-		// Find closing $
-		let matchPos = pos + 1;
-		while (matchPos < state.posMax) {
-			if (state.src.charCodeAt(matchPos) === 0x24) {
-				// Check it's not escaped
-				let backslashCount = 0;
-				let checkPos = matchPos - 1;
-				while (checkPos > pos && state.src.charCodeAt(checkPos) === 0x5c) {
-					backslashCount++;
-					checkPos--;
-				}
-				if (backslashCount % 2 === 0) {
-					// Found closing $
-					if (silent) return true;
-					const content = state.src.slice(pos + 1, matchPos);
-					const token = state.push("math_inline", "math", 0);
-					token.content = content;
-					token.markup = "$";
-					state.pos = matchPos + 1;
-					return true;
-				}
-			}
-			matchPos++;
-		}
-
-		return false;
-	});
-}
-
-// ---------------------------------------------------------------------------
 // Initialize markdown-it with all MyST plugins
 // ---------------------------------------------------------------------------
 
 const md = new MarkdownIt("commonmark", { html: false });
 md.use(colonFencePlugin);
-md.use(dollarMathPlugin);
+md.use(dollarmathPlugin);
 md.use(directivePlugin);
 md.use(rolePlugin);
 
@@ -270,6 +160,17 @@ function walkInlines(tokens: any[], start: number, end: number): MystInline[] {
 		}
 
 		if (tok.type === "math_inline") {
+			inlines.push({
+				type: "role",
+				name: "math",
+				content: tok.content,
+			});
+			i++;
+			continue;
+		}
+
+		// Display math in inline context (e.g. $$...$$ on a single line)
+		if (tok.type === "math_inline_double") {
 			inlines.push({
 				type: "role",
 				name: "math",
@@ -527,7 +428,7 @@ function walkBlocks(tokens: any[]): MystBlock[] {
 		}
 
 		// math_block (from dollar-math plugin)
-		if (tok.type === "math_block") {
+		if (tok.type === "math_block" || tok.type === "math_block_label") {
 			blocks.push({
 				type: "math_block",
 				value: tok.content,
