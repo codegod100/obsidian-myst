@@ -192,7 +192,6 @@ function parseDirectiveSpans(source: string): DirectiveSpan[] {
 		});
 	}
 
-	console.log("[myst] parseDirectiveSpans:", spans.length, "spans:", spans.map((s) => `${s.name}[${s.startLine},${s.endLine}]`).join(" "));
 	return spans;
 }
 
@@ -609,8 +608,6 @@ export const directivePostProcessor: MarkdownPostProcessor = async (
 	const sourcePath = ctx.sourcePath;
 	if (!sourcePath) return;
 
-	console.log(`[myst] section [${sectionRange.start},${sectionRange.end}] <${el.tagName}> class="${el.className?.slice(0, 60)}"`);
-
 	const cache = await getFileCache(sourcePath);
 	if (!cache || cache.spans.length === 0) return;
 
@@ -620,13 +617,11 @@ export const directivePostProcessor: MarkdownPostProcessor = async (
 
 		const sectionStartsDirective = sectionRange.start <= span.startLine;
 		if (!sectionStartsDirective) {
-			console.warn(`[myst] section starts mid-directive, hiding: section=[${sectionRange.start},${sectionRange.end}] span=[${span.startLine},${span.endLine}] name=${span.name}`);
 			el.empty();
 			el.style.display = "none";
 			return;
 		}
 
-		console.log(`[myst] rendering directive: section=[${sectionRange.start},${sectionRange.end}] span=[${span.startLine},${span.endLine}] name=${span.name}`);
 		const rendered = await renderDirectiveSpan(span, sourcePath);
 		el.empty();
 		el.style.display = "";
