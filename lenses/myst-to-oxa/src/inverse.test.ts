@@ -839,4 +839,411 @@ describe("round-trip: MyST → OXA → MyST", () => {
 
     expect(result).toEqual(original);
   });
+
+  // --- New round-trip tests covering gaps ---
+
+  it("preserves deeply nested blockquote > list > paragraph", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "blockquote",
+          children: [
+            {
+              type: "ordered_list",
+              children: [
+                {
+                  type: "list_item",
+                  children: [
+                    { type: "paragraph", children: [{ type: "text", value: "nested item" }] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves nested blockquotes", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "blockquote",
+          children: [
+            {
+              type: "blockquote",
+              children: [
+                { type: "paragraph", children: [{ type: "text", value: "deeply nested" }] },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves multiple inline types in one paragraph", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "paragraph",
+          children: [
+            { type: "text", value: "Normal " },
+            { type: "strong", children: [{ type: "text", value: "bold" }] },
+            { type: "text", value: " " },
+            { type: "emphasis", children: [{ type: "text", value: "italic" }] },
+            { type: "text", value: " " },
+            { type: "inline_code", value: "code" },
+            { type: "text", value: " " },
+            {
+              type: "link",
+              target: "https://example.com",
+              children: [{ type: "text", value: "link" }],
+            },
+            { type: "text", value: " end." },
+          ],
+        },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves link with formatted children", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "paragraph",
+          children: [
+            {
+              type: "link",
+              target: "https://example.com",
+              children: [
+                { type: "strong", children: [{ type: "text", value: "bold link" }] },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves link with inline code child", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "paragraph",
+          children: [
+            {
+              type: "link",
+              target: "https://example.com",
+              children: [
+                { type: "inline_code", value: "npm install" },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves admonition with multiple paragraphs", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "directive",
+          name: "note",
+          argument: "Details",
+          options: {},
+          body: "",
+          children: [
+            { type: "paragraph", children: [{ type: "text", value: "First paragraph." }] },
+            { type: "paragraph", children: [{ type: "text", value: "Second paragraph." }] },
+          ],
+        },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves admonition with list inside", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "directive",
+          name: "warning",
+          argument: "Requirements",
+          options: {},
+          body: "",
+          children: [
+            {
+              type: "unordered_list",
+              children: [
+                { type: "list_item", children: [{ type: "paragraph", children: [{ type: "text", value: "item one" }] }] },
+                { type: "list_item", children: [{ type: "paragraph", children: [{ type: "text", value: "item two" }] }] },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves image without alt text", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        { type: "image", src: "https://example.com/photo.png" },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves ordered list with startIndex", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "ordered_list",
+          startIndex: 3,
+          children: [
+            { type: "list_item", children: [{ type: "paragraph", children: [{ type: "text", value: "third" }] }] },
+          ],
+        },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves code block without language", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        { type: "code_block", value: "plain text code" },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("loses unknown role origin (retraction)", () => {
+    // Unknown roles (not code/math/sup/sub) convert to plain Text
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "paragraph",
+          children: [
+            { type: "role", name: "ref", content: "some-label" },
+          ],
+        },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    // Unknown role becomes plain text — loses role origin
+    expect(result).toEqual({
+      type: "document",
+      children: [
+        {
+          type: "paragraph",
+          children: [
+            { type: "text", value: "some-label" },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("preserves code-cell directive without options", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "directive",
+          name: "code-cell",
+          argument: "python",
+          options: {},
+          body: "x = 1",
+        },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves code-cell directive with options", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "directive",
+          name: "code-cell",
+          argument: "python",
+          options: { tags: '["hide-input"]' },
+          body: "print('hello')",
+        },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves document metadata", () => {
+    const original: MystDocument = {
+      type: "document",
+      title: "Test",
+      metadata: { subtitle: "A subtitle", license: "CC-BY-4.0" },
+      children: [
+        { type: "paragraph", children: [{ type: "text", value: "Content." }] },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves all heading levels", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        { type: "heading", level: 1, children: [{ type: "text", value: "H1" }] },
+        { type: "heading", level: 2, children: [{ type: "text", value: "H2" }] },
+        { type: "heading", level: 3, children: [{ type: "text", value: "H3" }] },
+        { type: "heading", level: 4, children: [{ type: "text", value: "H4" }] },
+        { type: "heading", level: 5, children: [{ type: "text", value: "H5" }] },
+        { type: "heading", level: 6, children: [{ type: "text", value: "H6" }] },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves heading with inline formatting", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "heading",
+          level: 2,
+          children: [
+            { type: "text", value: "A " },
+            { type: "strong", children: [{ type: "text", value: "bold" }] },
+            { type: "text", value: " heading" },
+          ],
+        },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves link without children (bare URL)", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "paragraph",
+          children: [
+            { type: "link", target: "https://example.com" },
+          ],
+        },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
+
+  it("preserves deeply mixed inline nesting", () => {
+    const original: MystDocument = {
+      type: "document",
+      children: [
+        {
+          type: "paragraph",
+          children: [
+            { type: "strong", children: [
+              { type: "emphasis", children: [{ type: "text", value: "bold italic" }] },
+            ] },
+            { type: "text", value: " and " },
+            { type: "inline_code", value: "code" },
+          ],
+        },
+      ],
+    };
+
+    const oxa = convertMystToOxa(original);
+    const result = convertOxaToMyst(oxa);
+
+    expect(result).toEqual(original);
+  });
 });

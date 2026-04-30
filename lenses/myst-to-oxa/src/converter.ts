@@ -283,10 +283,15 @@ function convertDirective(directive: MystDirective): OxaBlock | undefined {
       if (directive.argument) {
         result.language = directive.argument;
       }
-      // Preserve directive options in data for round-trip
+      // Preserve directive name and options in data for round-trip
+      const data: Record<string, unknown> = {};
+      data.directiveName = directive.name;
       const opts = Object.entries(directive.options);
       if (opts.length > 0) {
-        result.data = { options: directive.options };
+        data.options = directive.options;
+      }
+      if (Object.keys(data).length > 0) {
+        result.data = data;
       }
       return result;
     }
@@ -295,10 +300,15 @@ function convertDirective(directive: MystDirective): OxaBlock | undefined {
         type: "Math",
         value: directive.body,
       };
-      // Preserve directive options in data for round-trip
+      // Preserve directive name and options in data for round-trip
+      const data: Record<string, unknown> = {};
+      data.directiveName = directive.name;
       const opts = Object.entries(directive.options);
       if (opts.length > 0) {
-        result.data = { options: directive.options };
+        data.options = directive.options;
+      }
+      if (Object.keys(data).length > 0) {
+        result.data = data;
       }
       return result;
     }

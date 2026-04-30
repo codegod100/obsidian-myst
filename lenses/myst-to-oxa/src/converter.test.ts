@@ -252,6 +252,7 @@ describe("convertMystToOxa", () => {
           type: "Code",
           value: "print('hello')",
           language: "python",
+          data: { directiveName: "code-block" },
         },
       ],
     });
@@ -330,7 +331,7 @@ describe("convertMystToOxa", () => {
     expect(result).toEqual({
       type: "Document",
       children: [
-        { type: "Math", value: "E = mc^2" },
+        { type: "Math", value: "E = mc^2", data: { directiveName: "math" } },
       ],
     });
   });

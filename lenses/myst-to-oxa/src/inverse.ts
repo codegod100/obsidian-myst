@@ -162,12 +162,23 @@ function invertParagraph(node: OxaBlock & { children: OxaInline[] }): MystParagr
 }
 
 function invertCode(node: OxaBlock & { value: string; language?: string; data?: Record<string, unknown> }): MystDirective | MystCodeBlock {
-  // If the code block came from a directive with options, reconstruct as directive
+  // If the code block came from a directive, reconstruct as directive
   const options = node.data?.options as Record<string, string> | undefined;
+  const directiveName = node.data?.directiveName as string | undefined;
+  if (directiveName && directiveName !== "code-block") {
+    // Non-default directive name (e.g. code-cell) — always reconstruct as directive
+    return {
+      type: "directive",
+      name: directiveName,
+      argument: node.language ?? "",
+      options: options ?? {},
+      body: node.value,
+    };
+  }
   if (options && Object.keys(options).length > 0) {
     return {
       type: "directive",
-      name: "code-block",
+      name: directiveName ?? "code-block",
       argument: node.language ?? "",
       options,
       body: node.value,
@@ -211,10 +222,11 @@ function invertImage(node: OxaBlock & { src: string; alt?: string }): MystImage 
 function invertMath(node: OxaBlock & { value: string; data?: Record<string, unknown> }): MystDirective | MystMathBlock {
   // If the math block came from a directive with options, reconstruct as directive
   const options = node.data?.options as Record<string, string> | undefined;
+  const directiveName = node.data?.directiveName as string | undefined;
   if (options && Object.keys(options).length > 0) {
     return {
       type: "directive",
-      name: "math",
+      name: directiveName ?? "math",
       argument: "",
       options,
       body: node.value,
